@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ứng Dụng Thu Thập Dữ Liệu Giọng Nói Bệnh Viện</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- JSZip for exporting zip files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 0.4; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .recording-pulse { animation: pulse-ring 1.5s infinite ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600 text-white rounded-xl shadow-md">
+                    <i data-lucide="mic" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-slate-900 leading-tight">Speech Collector Pro</h1>
+                    <p class="text-xs text-slate-500">Kịch bản thu âm Robot Bệnh viện</p>
+                </div>
+            </div>
+            
+            <div id="userInfoHeader" class="hidden flex items-center gap-3 bg-slate-100 py-1.5 px-3 rounded-full text-xs font-medium">
+                <span id="headerSubjectBadge" class="bg-indigo-600 text-white px-2 py-0.5 rounded-full font-bold">M10</span>
+                <span id="headerMetaText" class="text-slate-600">Nam | 10 tuổi | Miền Bắc</span>
+                <button onclick="changeSubject()" class="text-indigo-600 hover:text-indigo-800 font-semibold ml-1">Đổi người</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col">
+        
+        <!-- STEP 1: USER INFO FORM (Initial View) -->
+        <div id="stepSetup" class="max-w-2xl mx-auto w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden my-auto">
+            <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 text-white">
+                <h2 class="text-xl font-bold flex items-center gap-2">
+                    <i data-lucide="user-plus" class="w-5 h-5"></i> Thông Tin Người Thu Âm
+                </h2>
+                <p class="text-indigo-100 text-xs mt-1">Vui lòng nhập đầy đủ các thông tin thông số để tự động tải kịch bản chuẩn</p>
+            </div>
+
+            <!-- BẢNG NHẮC NHỞ HƯỚNG DẪN TRƯỚC KHI THU -->
+            <div class="p-6 pb-0">
+                <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
+                    <div class="font-bold flex items-center gap-1.5 text-amber-900 text-sm">
+                        <i data-lucide="alert-circle" class="w-4 h-4 text-amber-600"></i> Hướng dẫn quan trọng trước khi thu âm:
+                    </div>
+                    <ul class="list-disc pl-5 space-y-1 text-amber-800">
+                        <li><strong>Không gian:</strong> Chọn phòng yên tĩnh, tắt quạt và điều hòa nếu được. <strong>Không thu trong phòng tắm</strong> vì bị vang âm.</li>
+                        <li><strong>Khoảng cách mic:</strong> Dùng điện thoại hoặc máy tính, để micro cách miệng khoảng <strong>20 đến 30 cm</strong>, không cầm quá sát tránh tiếng thở.</li>
+                        <li><strong>Thao tác ghi âm:</strong> Mỗi câu thu thành 1 file riêng. Cần <strong>im lặng khoảng 1 giây trước và sau mỗi câu</strong>.</li>
+                        <li><strong>Giọng đọc:</strong> Nói bằng giọng quê quán thật, không cần cố nói giọng chuẩn. Đọc sai có thể bấm ghi âm lại câu đó.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <form id="setupForm" onsubmit="handleStartRecording(event)" class="p-6 space-y-5">
+                <!-- Mã người / Độ tuổi chọn lựa -->
+                <div>
+                    <label class="block text-sm font-semibold text-slate-700 mb-2">Chọn Mã Người / Kịch Bản (*)</label>
+                    <select id="subjectIdSelect" onchange="onSubjectSelectChange()" class="w-full rounded-xl border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all text-sm bg-slate-50">
+                        <option value="M10">M10 - Nam (10 tuổi) - Kịch bản K (Trẻ em)</option>
+                        <option value="F10">F10 - Nữ (10 tuổi) - Kịch bản K (Trẻ em)</option>
+                        <option value="A">A - Nam (20 tuổi) - Kịch bản A (Thanh niên)</option>
+                        <option value="B">B - Nữ (20 tuổi) - Kịch bản B (Thanh niên)</option>
+                        <option value="M30">M30 - Nam (30 tuổi) - Kịch bản T (Trung niên)</option>
+                        <option value="F30">F30 - Nữ (30 tuổi) - Kịch bản T (Trung niên)</option>
+                        <option value="M50">M50 - Nam (50 tuổi) - Kịch bản N (Lớn tuổi)</option>
+                        <option value="F50">F50 - Nữ (50 tuổi) - Kịch bản N (Lớn tuổi)</option>
+                        <option value="M80">M80 - Nam (80 tuổi) - Kịch bản G (Cao tuổi)</option>
+                        <option value="F80">F80 - Nữ (80 tuổi) - Kịch bản G (Cao tuổi)</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Giới tính -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Giới tính</label>
+                        <input type="text" id="genderInput" readonly class="w-full rounded-xl border-slate-200 border p-3 bg-slate-100 text-slate-600 text-sm font-medium">
+                    </div>
+                    <!-- Tuổi thực -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Tuổi thực (*)</label>
+                        <input type="number" id="realAgeInput" min="5" max="110" required placeholder="Nhập số tuổi thực..." class="w-full rounded-xl border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <!-- Vùng miền -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Vùng giọng / Miền (*)</label>
+                        <select id="regionSelect" class="w-full rounded-xl border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm bg-white">
+                            <option value="Bắc">Miền Bắc</option>
+                            <option value="Trung">Miền Trung</option>
+                            <option value="Nam">Miền Nam</option>
+                        </select>
+                    </div>
+                    <!-- Tỉnh / Thành phố -->
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1">Quê quán (Tỉnh / Thành)</label>
+                        <input type="text" id="provinceInput" placeholder="Ví dụ: Hà Nội, Nghệ An, TP.HCM..." class="w-full rounded-xl border-slate-300 border p-3 focus:ring-2 focus:ring-indigo-500 focus:outline-none text-sm">
+                    </div>
+                </div>
+
+                <!-- Thông tin ghi chú hướng dẫn kịch bản tương ứng -->
+                <div id="scriptGuideBox" class="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-1">
+                    <!-- Generated via JS -->
+                </div>
+
+                <button type="submit" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2">
+                    <i data-lucide="play" class="w-5 h-5"></i> Bắt Đầu Thu Âm
+                </button>
+            </form>
+        </div>
+
+        <!-- STEP 2: RECORDING WORKSPACE (Main Workspace) -->
+        <div id="stepWorkspace" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
+            
+            <!-- Left Panel: Navigation & Sentence List -->
+            <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col h-[650px] overflow-hidden">
+                <!-- Top Progress Bar -->
+                <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+                    <div class="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2">
+                        <span>Tiến độ thu âm</span>
+                        <span id="progressPercent">0% (0/0 file)</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-2.5 overflow-hidden">
+                        <div id="progressBar" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="mt-3 flex gap-2">
+                        <select id="filterMode" onchange="renderSentenceList()" class="w-full text-xs rounded-lg border-slate-200 border p-2 bg-white font-medium">
+                            <option value="all">Tất cả các câu</option>
+                            <option value="pending">Chưa thu xong</option>
+                            <option value="done">Đã thu xong</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Sentence List Scrollable -->
+                <div id="sentenceList" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                    <!-- Dynamically Loaded -->
+                </div>
+            </div>
+
+            <!-- Right Panel: Recording Console & Prompt -->
+            <div class="lg:col-span-7 flex flex-col space-y-4">
+                
+                <!-- Prompt Display Card -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex-1 flex flex-col justify-between min-h-[300px]">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-2">
+                                <span id="currentPromptCode" class="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-md">
+                                    --
+                                </span>
+                                <span id="currentPromptType" class="bg-amber-100 text-amber-800 text-xs font-bold px-2.5 py-1 rounded-md">
+                                    Chế độ: Đọc rõ (_r)
+                                </span>
+                            </div>
+                            <span id="currentIntentBadge" class="text-xs text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md font-medium">
+                                Intent: --
+                            </span>
+                        </div>
+
+                        <!-- Main Prompt Text -->
+                        <div class="my-6">
+                            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Câu hội thoại cần thu:</h3>
+                            <p id="currentPromptText" class="text-2xl sm:text-3xl font-extrabold text-slate-800 leading-snug">
+                                Vui lòng chọn một câu từ danh sách bên trái.
+                            </p>
+                        </div>
+
+                        <!-- Filename Spec display -->
+                        <div class="bg-slate-50 rounded-xl p-3 border border-slate-200/60 flex items-center justify-between text-xs text-slate-600">
+                            <span class="font-medium">Tên file dự kiến:</span>
+                            <code id="currentFilename" class="bg-slate-200 text-slate-800 px-2 py-1 rounded font-mono font-bold">M10_K01_r.wav</code>
+                        </div>
+                    </div>
+
+                    <!-- Recording Controls Box -->
+                    <div class="mt-6 pt-6 border-t border-slate-100">
+                        <div class="flex flex-col items-center justify-center space-y-4">
+                            
+                            <!-- Waveform / Timer indicator -->
+                            <div class="flex items-center gap-3">
+                                <div id="recordingStatusDot" class="w-3 h-3 rounded-full bg-slate-300"></div>
+                                <span id="recordingTimer" class="font-mono text-xl font-bold text-slate-700">00:00</span>
+                            </div>
+
+                            <!-- Record Action Buttons -->
+                            <div class="flex items-center gap-4">
+                                <button id="btnRecord" onclick="toggleRecording()" class="w-16 h-16 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-lg hover:shadow-red-200 transition-all focus:outline-none">
+                                    <i data-lucide="mic" class="w-8 h-8"></i>
+                                </button>
+                                
+                                <button id="btnStop" onclick="stopRecording()" disabled class="w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center cursor-not-allowed transition-all">
+                                    <i data-lucide="square" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+
+                            <!-- Playback Audio Bar (Visible when audio recorded) -->
+                            <div id="playbackContainer" class="hidden w-full bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-3">
+                                <audio id="audioPlayback" controls class="w-full h-8"></audio>
+                                <button onclick="deleteCurrentRecord()" title="Xóa thu lại" class="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg">
+                                    <i data-lucide="trash-2" class="w-5 h-5"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Prev / Next Prompt Navigation -->
+                        <div class="flex items-center justify-between mt-6 pt-4 border-t border-slate-100">
+                            <button onclick="navigatePrompt(-1)" class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-indigo-600">
+                                <i data-lucide="arrow-left" class="w-4 h-4"></i> Câu trước
+                            </button>
+                            <button onclick="navigatePrompt(1)" class="flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-indigo-600">
+                                Câu tiếp theo <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export & Data Management Card -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="cloud-upload" class="w-5 h-5 text-indigo-600"></i>
+                        <span class="text-xs font-semibold text-slate-700">Hoàn Thành & Gửi Dữ Liệu</span>
+                    </div>
+
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <button onclick="exportMetadataJSON()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                            <i data-lucide="file-json" class="w-4 h-4"></i> JSON
+                        </button>
+                        <button onclick="exportMetadataCSV()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                            <i data-lucide="file-spreadsheet" class="w-4 h-4"></i> CSV
+                        </button>
+                        <button onclick="exportAllZIP()" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold flex items-center gap-1.5">
+                            <i data-lucide="download" class="w-4 h-4"></i> Tải ZIP về máy
+                        </button>
+                        <button id="btnUploadDrive" onclick="uploadToGoogleDrive()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md transition-all">
+                            <i data-lucide="upload-cloud" class="w-4 h-4"></i> Gửi Trực Tiếp Lên Google Drive
+                        </button>
+                    </div>
+                </div>
+                
+
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Custom Notification Toast -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 text-xs font-medium">
+        <span id="toastIcon"></span>
+        <span id="toastMessage">Thông báo</span>
+    </div>
+
+    <!-- Application Logic Javascript -->
+    <script>
+        /* ----------------------------------------------------
+           1. GOOGLE APPS SCRIPT WEB APP API CONFIGURATION
+        ---------------------------------------------------- */
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx7HZE4IvblgHHsdtq2ISeGjQryHZZ9tClCTHwmkzDFQ4pfHVnS4OdzUSMXTD2ZcjE/exec";
+
+        /* ----------------------------------------------------
+           2. DATABASE KỊCH BẢN (100% ĐẦY ĐỦ TỪ TÀI LIỆU PDF)
+        ---------------------------------------------------- */
+        const SCRIPTS_DATA = {
+            COMMON: [
+                { code: "C01", text: "Cho tôi hỏi khoa tim mạch ở đâu?", intent: "hoi_khoa" },
+                { code: "C02", text: "Khoa nhi ở tầng mấy?", intent: "hoi_khoa" },
+                { code: "C03", text: "Phòng xét nghiệm máu đi đường nào?", intent: "hoi_phong" },
+                { code: "C04", text: "Phòng siêu âm số 304 ở đâu?", intent: "hoi_phong" },
+                { code: "C05", text: "Quầy thu ngân ở đâu?", intent: "thanh_toan" },
+                { code: "C06", text: "Nhà thuốc ở đâu?", intent: "nha_thuoc" },
+                { code: "C07", text: "Dẫn tôi đến khoa sản được không?", intent: "dan_duong" },
+                { code: "C08", text: "Đi chậm lại giúp tôi.", intent: "dieu_chinh_toc_do" },
+                { code: "C09", text: "Gọi nhân viên giúp tôi với.", intent: "gap_nhan_vien" },
+                { code: "C10", text: "Cảm ơn nhé.", intent: "cam_on" }
+            ],
+            K: [
+                { code: "K01", text: "Robot ơi, chỗ khám cho trẻ con ở đâu?", intent: "hoi_khoa" },
+                { code: "K02", text: "Con bị sốt, mẹ bảo đi khám nhi, ở đâu ạ?", intent: "hoi_khoa" },
+                { code: "K03", text: "Nhà vệ sinh ở đâu ạ? Con buồn đi vệ sinh lắm.", intent: "tien_ich" },
+                { code: "K04", text: "Robot ơi, con bị lạc mẹ rồi.", intent: "gap_nhan_vien" },
+                { code: "K05", text: "Con không tìm thấy bố, robot giúp con với.", intent: "gap_nhan_vien" },
+                { code: "K06", text: "Chỗ uống nước ở đâu ạ?", intent: "tien_ich" },
+                { code: "K07", text: "Con đói, ở đây có chỗ bán đồ ăn không?", intent: "tien_ich" },
+                { code: "K08", text: "Phòng tiêm ở đâu ạ? Con sợ tiêm lắm.", intent: "hoi_phong" },
+                { code: "K09", text: "Robot dẫn con ra quầy đăng ký được không?", intent: "dan_duong" },
+                { code: "K10", text: "Robot đi chậm thôi, con theo không kịp.", intent: "dieu_chinh_toc_do" },
+                { code: "K11", text: "Robot nói lại đi, con chưa nghe rõ.", intent: "nhac_lai" },
+                { code: "K12", text: "Em con bị ngã chảy máu rồi, cứu với!", intent: "cap_cuu" },
+                { code: "K13", text: "Con có phải uống thuốc đắng không ạ?", intent: "khong_ho_tro" },
+                { code: "K14", text: "Chỗ chơi cho trẻ con ở đâu ạ?", intent: "tien_ich" },
+                { code: "K15", text: "Con cảm ơn robot ạ.", intent: "cam_on" }
+            ],
+            A: [
+                { code: "A_01", text: "Chào bạn, cho mình hỏi chỗ đăng ký khám ở đâu vậy?", intent: "dang_ky_kham" },
+                { code: "A_02", text: "Mình khám lần đầu thì phải làm thủ tục gì trước?", intent: "dang_ky_kham" },
+                { code: "A_03", text: "Mình có bảo hiểm y tế, đưa thẻ ở quầy nào?", intent: "bao_hiem" },
+                { code: "A_04", text: "Mình quên mang thẻ bảo hiểm, dùng căn cước công dân được không?", intent: "bao_hiem" },
+                { code: "A_05", text: "Mình bị đau bụng mấy hôm nay thì nên khám khoa nào?", intent: "hoi_khoa" },
+                { code: "A_06", text: "Khoa tiêu hóa ở tầng mấy?", intent: "hoi_khoa" },
+                { code: "A_07", text: "Phòng khám số 205 đi đường nào?", intent: "hoi_phong" },
+                { code: "A_08", text: "Bác sĩ bảo mình đi nội soi dạ dày, phòng nội soi ở đâu?", intent: "hoi_phong" },
+                { code: "A_09", text: "Xét nghiệm máu thì lấy máu ở đâu?", intent: "hoi_phong" },
+                { code: "A_10", text: "Mình phải nhịn ăn trước khi xét nghiệm không?", intent: "khong_ho_tro" },
+                { code: "A_11", text: "Bao lâu thì có kết quả xét nghiệm?", intent: "thoi_gian_cho" },
+                { code: "A_12", text: "Lấy kết quả ở đâu vậy bạn?", intent: "hoi_phong" },
+                { code: "A_13", text: "Đóng tiền viện phí ở quầy nào?", intent: "thanh_toan" },
+                { code: "A_14", text: "Ở đây có thanh toán bằng chuyển khoản không?", intent: "thanh_toan" },
+                { code: "A_15", text: "Nhà thuốc bệnh viện ở đâu?", intent: "nha_thuoc" },
+                { code: "A_16", text: "Thang máy gần nhất ở đâu?", intent: "tien_ich" },
+                { code: "A_17", text: "Cho mình hỏi nhà vệ sinh nam ở đâu?", intent: "tien_ich" },
+                { code: "A_18", text: "Mình muốn gửi xe máy thì gửi ở đâu?", intent: "tien_ich" },
+                { code: "A_19", text: "Bố mình bị đau ngực, khám tim mạch ở đâu?", intent: "hoi_khoa" },
+                { code: "A_20", text: "Bố mình đi lại hơi khó, bệnh viện có cho mượn xe lăn không?", intent: "ho_tro_di_chuyen" },
+                { code: "A_21", text: "Bạn dẫn bố con mình đến phòng siêu âm tim được không?", intent: "dan_duong" },
+                { code: "A_22", text: "Đi chậm thôi nhé, bố mình đi không nhanh được.", intent: "dieu_chinh_toc_do" },
+                { code: "A_23", text: "Khoan, dừng lại chút, bố mình mệt.", intent: "dung_lai" },
+                { code: "A_24", text: "Được rồi, đi tiếp đi.", intent: "tiep_tuc" },
+                { code: "A_25", text: "Bố mình đang khó thở quá, gọi bác sĩ giúp mình với!", intent: "cap_cuu" },
+                { code: "A_26", text: "Khoa cấp cứu ở đâu?", intent: "cap_cuu" },
+                { code: "A_27", text: "Mình muốn gặp nhân viên hướng dẫn.", intent: "gap_nhan_vien" },
+                { code: "A_28", text: "Phòng điện tim là phòng mấy?", intent: "hoi_phong" },
+                { code: "A_29", text: "Bây giờ còn bao nhiêu người nữa thì tới số của mình?", intent: "thoi_gian_cho" },
+                { code: "A_30", text: "Ok, cảm ơn bạn nhiều nha.", intent: "cam_on" }
+            ],
+            B: [
+                { code: "B_01", text: "Dạ cho em hỏi lấy số khám bệnh ở đâu ạ?", intent: "dang_ky_kham" },
+                { code: "B_02", text: "Em có đặt lịch khám online rồi thì đến quầy nào ạ?", intent: "dang_ky_kham" },
+                { code: "B_03", text: "Thẻ bảo hiểm của em ở tỉnh khác thì có dùng được không ạ?", intent: "bao_hiem" },
+                { code: "B_04", text: "Em bị sốt với đau họng thì khám khoa nào ạ?", intent: "hoi_khoa" },
+                { code: "B_05", text: "Khoa tai mũi họng đi lối nào vậy ạ?", intent: "hoi_khoa" },
+                { code: "B_06", text: "Phòng 112 ở tầng một hay tầng hai ạ?", intent: "hoi_phong" },
+                { code: "B_07", text: "Chụp X-quang phổi ở đâu ạ?", intent: "hoi_phong" },
+                { code: "B_08", text: "Em cần nộp phiếu chỉ định ở đâu ạ?", intent: "hoi_phong" },
+                { code: "B_09", text: "Chỗ ngồi chờ khám ở đâu ạ?", intent: "tien_ich" },
+                { code: "B_10", text: "Em có cần đeo khẩu trang không ạ?", intent: "khong_ho_tro" },
+                { code: "B_11", text: "Em đợi lâu quá rồi mà chưa tới lượt, hỏi ai ạ?", intent: "gap_nhan_vien" },
+                { code: "B_12", text: "Em muốn trả tiền bằng thẻ ngân hàng được không ạ?", intent: "thanh_toan" },
+                { code: "B_13", text: "Lấy thuốc bảo hiểm ở đâu ạ?", intent: "nha_thuoc" },
+                { code: "B_14", text: "Nhà vệ sinh nữ ở đâu ạ?", intent: "tien_ich" },
+                { code: "B_15", text: "Ở đây có chỗ bán đồ ăn không ạ?", intent: "tien_ich" },
+                { code: "B_16", text: "Bà em bị đau đầu gối, đi khám xương khớp ở đâu ạ?", intent: "hoi_khoa" },
+                { code: "B_17", text: "Bà em lớn tuổi rồi, có quầy ưu tiên cho người già không ạ?", intent: "dang_ky_kham" },
+                { code: "B_18", text: "Bà em nghe không rõ, bạn nói to hơn được không?", intent: "dieu_chinh_am_luong" },
+                { code: "B_19", text: "Bạn nói lại lần nữa được không, em chưa nghe kịp.", intent: "nhac_lai" },
+                { code: "B_20", text: "Bạn dẫn bà em tới khoa cơ xương khớp giúp em với.", intent: "dan_duong" },
+                { code: "B_21", text: "Đi chậm chậm thôi bạn ơi.", intent: "dieu_chinh_toc_do" },
+                { code: "B_22", text: "Bà em muốn ngồi nghỉ một chút.", intent: "dung_lai" },
+                { code: "B_23", text: "Rồi, mình đi tiếp nha.", intent: "tiep_tuc" },
+                { code: "B_24", text: "Có thang máy không, bà em không leo cầu thang được.", intent: "tien_ich" },
+                { code: "B_25", text: "Bà em bị chóng mặt, sắp ngã rồi, giúp em với!", intent: "cap_cuu" },
+                { code: "B_26", text: "Phòng vật lý trị liệu ở đâu ạ?", intent: "hoi_phong" },
+                { code: "B_27", text: "Khám xong thì quay lại chỗ bác sĩ để đọc kết quả hả bạn?", intent: "hoi_phong" },
+                { code: "B_28", text: "Mấy giờ thì bệnh viện nghỉ trưa ạ?", intent: "thoi_gian_cho" },
+                { code: "B_29", text: "Em không hiểu, bạn chỉ lại đường giúp em được không?", intent: "nhac_lai" },
+                { code: "B_30", text: "Dạ em cảm ơn ạ.", intent: "cam_on" }
+            ],
+            T: [
+                { code: "T01", text: "Cho hỏi đặt lịch qua app rồi thì check-in ở đâu?", intent: "dang_ky_kham" },
+                { code: "T02", text: "Con tôi bị ho mấy hôm nay, khám nhi ở tầng nào?", intent: "hoi_khoa" },
+                { code: "T03", text: "Phòng tiêm chủng cho trẻ em ở đâu?", intent: "hoi_phong" },
+                { code: "T04", text: "Vợ tôi đang mang bầu, khám thai ở khoa nào?", intent: "hoi_khoa" },
+                { code: "T05", text: "Chỗ gửi ô tô ở đâu vậy em?", intent: "tien_ich" },
+                { code: "T06", text: "Thanh toán bằng mã QR được không?", intent: "thanh_toan" },
+                { code: "T07", text: "Lấy kết quả xét nghiệm ở quầy nào?", intent: "hoi_phong" },
+                { code: "T08", text: "Tôi đi làm gấp, muốn khám nhanh thì đăng ký ở đâu?", intent: "dang_ky_kham" },
+                { code: "T09", text: "Thẻ bảo hiểm trên ứng dụng VNeID dùng được không?", intent: "bao_hiem" },
+                { code: "T10", text: "Phòng chụp cộng hưởng từ ở đâu?", intent: "hoi_phong" },
+                { code: "T11", text: "Khoa da liễu đi lối nào?", intent: "hoi_khoa" },
+                { code: "T12", text: "Dẫn hai mẹ con tôi lên khoa sản với.", intent: "dan_duong" },
+                { code: "T13", text: "Từ từ thôi, vợ tôi đi không nhanh được.", intent: "dieu_chinh_toc_do" },
+                { code: "T14", text: "Đợi chút, con tôi đang khóc.", intent: "dung_lai" },
+                { code: "T15", text: "Ok, đi tiếp đi em.", intent: "tiep_tuc" },
+                { code: "T16", text: "Có xe đẩy cho em bé không?", intent: "ho_tro_di_chuyen" },
+                { code: "T17", text: "Phòng cho con bú ở đâu?", intent: "tien_ich" },
+                { code: "T18", text: "Con tôi đang co giật, gọi bác sĩ gấp!", intent: "cap_cuu" },
+                { code: "T19", text: "Bé nhà tôi uống thuốc hạ sốt mấy lần một ngày?", intent: "khong_ho_tro" },
+                { code: "T20", text: "Chờ khám nhi khoảng bao lâu nữa?", intent: "thoi_gian_cho" },
+                { code: "T21", text: "Tôi muốn gặp nhân viên chăm sóc khách hàng.", intent: "gap_nhan_vien" },
+                { code: "T22", text: "Nói to lên chút, ở đây ồn quá.", intent: "dieu_chinh_am_luong" },
+                { code: "T23", text: "Phòng 410 là phòng gì vậy?", intent: "hoi_phong" },
+                { code: "T24", text: "Nhà thuốc có bán sữa cho trẻ sơ sinh không?", intent: "nha_thuoc" },
+                { code: "T25", text: "Cảm ơn em nhé.", intent: "cam_on" }
+            ],
+            N: [
+                { code: "N01", text: "Tôi đến tái khám theo lịch hẹn thì vào quầy nào?", intent: "dang_ky_kham" },
+                { code: "N02", text: "Tôi bị tiểu đường, khám nội tiết ở đâu?", intent: "hoi_khoa" },
+                { code: "N03", text: "Đo huyết áp ở chỗ nào?", intent: "hoi_phong" },
+                { code: "N04", text: "Khoa mắt ở tầng mấy cháu?", intent: "hoi_khoa" },
+                { code: "N05", text: "Thẻ bảo hiểm của tôi sắp hết hạn, gia hạn ở đâu?", intent: "bao_hiem" },
+                { code: "N06", text: "Bảo hiểm có chi trả tiền thuốc này không?", intent: "bao_hiem" },
+                { code: "N07", text: "Tôi cần chụp X-quang cột sống, đi đường nào?", intent: "hoi_phong" },
+                { code: "N08", text: "Lấy máu xét nghiệm đường huyết ở phòng nào?", intent: "hoi_phong" },
+                { code: "N09", text: "Tôi phải nhịn đói bao lâu thì xét nghiệm được?", intent: "khong_ho_tro" },
+                { code: "N10", text: "Đóng tiền tạm ứng ở đâu?", intent: "thanh_toan" },
+                { code: "N11", text: "Nhà thuốc bảo hiểm mở cửa đến mấy giờ?", intent: "nha_thuoc" },
+                { code: "N12", text: "Khoa thận ở khu nào?", intent: "hoi_khoa" },
+                { code: "N13", text: "Cháu dẫn bác lên khoa nội tiết với.", intent: "dan_duong" },
+                { code: "N14", text: "Đi chậm thôi cháu, bác bị đau chân.", intent: "dieu_chinh_toc_do" },
+                { code: "N15", text: "Cho bác nghỉ một lát.", intent: "dung_lai" },
+                { code: "N16", text: "Rồi, đi tiếp.", intent: "tiep_tuc" },
+                { code: "N17", text: "Cháu nói lại chậm chậm cho bác nghe với.", intent: "nhac_lai" },
+                { code: "N18", text: "Có ghế ngồi chờ gần đây không?", intent: "tien_ich" },
+                { code: "N19", text: "Thang máy ở đâu, bác không leo cầu thang nổi.", intent: "tien_ich" },
+                { code: "N20", text: "Tôi tức ngực, khó thở quá.", intent: "cap_cuu" },
+                { code: "N21", text: "Đợi lâu quá, tôi muốn hỏi nhân viên.", intent: "gap_nhan_vien" },
+                { code: "N22", text: "Mấy giờ thì có kết quả?", intent: "thoi_gian_cho" },
+                { code: "N23", text: "Có cho mượn xe lăn không cháu?", intent: "ho_tro_di_chuyen" },
+                { code: "N24", text: "Phòng siêu âm tuyến giáp ở đâu?", intent: "hoi_phong" },
+                { code: "N25", text: "Cảm ơn cháu nhiều.", intent: "cam_on" }
+            ],
+            G: [
+                { code: "G01", text: "Cháu ơi, khám bệnh ở đâu?", intent: "dang_ky_kham" },
+                { code: "G02", text: "Bác đau lưng, khám ở khoa nào?", intent: "hoi_khoa" },
+                { code: "G03", text: "Phòng khám người già ở đâu?", intent: "hoi_khoa" },
+                { code: "G04", text: "Bác không nghe rõ, nói to lên.", intent: "dieu_chinh_am_luong" },
+                { code: "G05", text: "Nói lại cho bác nghe.", intent: "nhac_lai" },
+                { code: "G06", text: "Cháu đưa bác đi với.", intent: "dan_duong" },
+                { code: "G07", text: "Đi chậm thôi cháu.", intent: "dieu_chinh_toc_do" },
+                { code: "G08", text: "Đứng lại, bác mỏi chân.", intent: "dung_lai" },
+                { code: "G09", text: "Ừ, đi tiếp.", intent: "tiep_tuc" },
+                { code: "G10", text: "Có xe lăn không cháu?", intent: "ho_tro_di_chuyen" },
+                { code: "G11", text: "Nhà vệ sinh đâu cháu?", intent: "tien_ich" },
+                { code: "G12", text: "Bác ngồi đâu chờ được?", intent: "tien_ich" },
+                { code: "G13", text: "Bác quên thẻ bảo hiểm rồi.", intent: "bao_hiem" },
+                { code: "G14", text: "Lấy thuốc ở đâu?", intent: "nha_thuoc" },
+                { code: "G15", text: "Trả tiền ở chỗ nào?", intent: "thanh_toan" },
+                { code: "G16", text: "Con cháu bác đâu mất rồi, gọi giúp bác.", intent: "gap_nhan_vien" },
+                { code: "G17", text: "Bác chóng mặt quá, muốn ngã.", intent: "cap_cuu" },
+                { code: "G18", text: "Thuốc này bác uống lúc no hay lúc đói?", intent: "khong_ho_tro" },
+                { code: "G19", text: "Bao giờ đến lượt bác?", intent: "thoi_gian_cho" },
+                { code: "G20", text: "Cảm ơn cháu nhé.", intent: "cam_on" }
+            ]
+        };
+
+        const SUBJECT_CONFIGS = {
+            "M10": { gender: "Nam", ageGroup: 10, scriptKey: "K", requireN: false, guide: "Bắt buộc thu _r. Chế độ _n không bắt buộc (thu nếu bé hào hứng). Cần phụ huynh đi cùng." },
+            "F10": { gender: "Nữ", ageGroup: 10, scriptKey: "K", requireN: false, guide: "Bắt buộc thu _r. Chế độ _n không bắt buộc (thu nếu bé hào hứng). Cần phụ huynh đi cùng." },
+            "A":   { gender: "Nam", ageGroup: 20, scriptKey: "A", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "B":   { gender: "Nữ", ageGroup: 20, scriptKey: "B", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "M30": { gender: "Nam", ageGroup: 30, scriptKey: "T", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "F30": { gender: "Nữ", ageGroup: 30, scriptKey: "T", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "M50": { gender: "Nam", ageGroup: 50, scriptKey: "N", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "F50": { gender: "Nữ", ageGroup: 50, scriptKey: "N", requireN: true,  guide: "Bắt buộc thu cả 2 chế độ: _r (Đọc rõ) và _n (Nói tự nhiên như đang hỏi thật)." },
+            "M80": { gender: "Nam", ageGroup: 80, scriptKey: "G", requireN: false, guide: "Chỉ thu _r theo kiểu nhắc lại. Không thu chế độ _n." },
+            "F80": { gender: "Nữ", ageGroup: 80, scriptKey: "G", requireN: false, guide: "Chỉ thu _r theo kiểu nhắc lại. Không thu chế độ _n." }
+        };
+
+        let currentSubject = { id: "M10", realAge: 10, gender: "Nam", region: "Bắc", province: "" };
+        let activePrompts = [];
+        let selectedPromptIndex = 0;
+        let recordedBlobs = {}; 
+
+        let mediaRecorder = null;
+        let audioChunks = [];
+        let isRecording = false;
+        let recordingStartTime = null;
+        let timerInterval = null;
+
+        window.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            onSubjectSelectChange();
+        });
+
+        function onSubjectSelectChange() {
+            const subjId = document.getElementById("subjectIdSelect").value;
+            const config = SUBJECT_CONFIGS[subjId];
+            
+            document.getElementById("genderInput").value = config.gender;
+            document.getElementById("realAgeInput").value = config.ageGroup;
+            
+            const guideBox = document.getElementById("scriptGuideBox");
+            guideBox.innerHTML = `
+                <div class="font-bold flex items-center gap-1">
+                    <i data-lucide="info" class="w-4 h-4"></i> Hướng dẫn nhóm ${subjId} (${config.ageGroup} tuổi):
+                </div>
+                <p>${config.guide}</p>
+            `;
+            lucide.createIcons();
+        }
+
+        function handleStartRecording(e) {
+            e.preventDefault();
+            const subjId = document.getElementById("subjectIdSelect").value;
+            const realAge = document.getElementById("realAgeInput").value;
+            const region = document.getElementById("regionSelect").value;
+            const province = document.getElementById("provinceInput").value;
+
+            currentSubject = {
+                id: subjId,
+                realAge: parseInt(realAge),
+                gender: SUBJECT_CONFIGS[subjId].gender,
+                region: region,
+                province: province
+            };
+
+            buildActivePromptsList();
+
+            document.getElementById("stepSetup").classList.add("hidden");
+            document.getElementById("stepWorkspace").classList.remove("hidden");
+            
+            document.getElementById("userInfoHeader").classList.remove("hidden");
+            document.getElementById("headerSubjectBadge").innerText = currentSubject.id;
+            document.getElementById("headerMetaText").innerText = `${currentSubject.gender} | ${currentSubject.realAge} tuổi | Miền ${currentSubject.region}`;
+
+            renderSentenceList();
+            selectPrompt(0);
+        }
+
+        function changeSubject() {
+            if (Object.keys(recordedBlobs).length > 0) {
+                if (!confirm("Thay đổi người thu âm sẽ reset các câu đã thu chưa lưu. Bạn chắc chắn muốn đổi không?")) {
+                    return;
+                }
+            }
+            recordedBlobs = {};
+            document.getElementById("stepWorkspace").classList.add("hidden");
+            document.getElementById("stepSetup").classList.remove("hidden");
+            document.getElementById("userInfoHeader").classList.add("hidden");
+        }
+
+        function buildActivePromptsList() {
+            const config = SUBJECT_CONFIGS[currentSubject.id];
+            const specificScript = SCRIPTS_DATA[config.scriptKey];
+            const commonScript = SCRIPTS_DATA.COMMON;
+
+            const rawSentences = [...specificScript, ...commonScript];
+            activePrompts = [];
+
+            rawSentences.forEach(s => {
+                activePrompts.push({
+                    code: s.code,
+                    text: s.text,
+                    intent: s.intent,
+                    mode: "r",
+                    modeLabel: config.ageGroup === 80 ? "Đọc/Nhắc lại (_r)" : "Đọc rõ (_r)",
+                    filename: `${currentSubject.id}_${s.code}_r.wav`
+                });
+
+                if (config.requireN) {
+                    activePrompts.push({
+                        code: s.code,
+                        text: s.text,
+                        intent: s.intent,
+                        mode: "n",
+                        modeLabel: "Nói tự nhiên (_n)",
+                        filename: `${currentSubject.id}_${s.code}_n.wav`
+                    });
+                } else if (config.ageGroup === 10) {
+                    activePrompts.push({
+                        code: s.code,
+                        text: s.text,
+                        intent: s.intent,
+                        mode: "n",
+                        modeLabel: "Tự nhiên tùy chọn (_n)",
+                        filename: `${currentSubject.id}_${s.code}_n.wav`
+                    });
+                }
+            });
+        }
+
+        function renderSentenceList() {
+            const container = document.getElementById("sentenceList");
+            const filterMode = document.getElementById("filterMode").value;
+            container.innerHTML = "";
+
+            let completedCount = 0;
+
+            activePrompts.forEach((prompt, index) => {
+                const isDone = !!recordedBlobs[prompt.filename];
+                if (isDone) completedCount++;
+
+                if (filterMode === "pending" && isDone) return;
+                if (filterMode === "done" && !isDone) return;
+
+                const isSelected = index === selectedPromptIndex;
+
+                const itemHtml = `
+                    <div onclick="selectPrompt(${index})" class="p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                        isSelected 
+                            ? 'bg-indigo-50 border-indigo-500 shadow-sm' 
+                            : 'bg-white border-slate-200 hover:border-slate-300'
+                    }">
+                        <div class="flex items-center gap-2.5 overflow-hidden">
+                            <span class="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${
+                                isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                            }">
+                                ${isDone ? '✓' : index + 1}
+                            </span>
+                            <div class="truncate">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-xs font-bold text-slate-800">${prompt.code}</span>
+                                    <span class="text-[10px] px-1.5 py-0.2 rounded font-semibold ${
+                                        prompt.mode === 'r' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
+                                    }">${prompt.mode}</span>
+                                </div>
+                                <p class="text-xs text-slate-600 truncate mt-0.5">${prompt.text}</p>
+                            </div>
+                        </div>
+
+                        ${isDone ? '<span class="text-xs font-medium text-emerald-600 shrink-0">Đã thu</span>' : '<span class="text-xs text-slate-400 shrink-0">Chưa thu</span>'}
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', itemHtml);
+            });
+
+            const total = activePrompts.length;
+            const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0;
+            document.getElementById("progressBar").style.width = `${percent}%`;
+            document.getElementById("progressPercent").innerText = `${percent}% (${completedCount}/${total} file)`;
+        }
+
+        function selectPrompt(index) {
+            if (index < 0 || index >= activePrompts.length) return;
+            selectedPromptIndex = index;
+            renderSentenceList();
+
+            const prompt = activePrompts[selectedPromptIndex];
+            document.getElementById("currentPromptCode").innerText = prompt.code;
+            document.getElementById("currentPromptType").innerText = prompt.modeLabel;
+            document.getElementById("currentIntentBadge").innerText = `Intent: ${prompt.intent}`;
+            document.getElementById("currentPromptText").innerText = prompt.text;
+            document.getElementById("currentFilename").innerText = prompt.filename;
+
+            const playbackContainer = document.getElementById("playbackContainer");
+            const audioPlayback = document.getElementById("audioPlayback");
+
+            if (recordedBlobs[prompt.filename]) {
+                const blob = recordedBlobs[prompt.filename];
+                audioPlayback.src = URL.createObjectURL(blob);
+                playbackContainer.classList.remove("hidden");
+            } else {
+                audioPlayback.src = "";
+                playbackContainer.classList.add("hidden");
+            }
+        }
+
+        function navigatePrompt(direction) {
+            const nextIdx = selectedPromptIndex + direction;
+            if (nextIdx >= 0 && nextIdx < activePrompts.length) {
+                selectPrompt(nextIdx);
+            }
+        }
+
+        async function toggleRecording() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioChunks = [];
+                
+                let mimeType = 'audio/webm';
+                if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+                    mimeType = 'audio/webm;codecs=opus';
+                } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                    mimeType = 'audio/mp4';
+                }
+
+                mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const audioBlob = new Blob(audioChunks, { type: mimeType });
+                    const currentPrompt = activePrompts[selectedPromptIndex];
+                    
+                    recordedBlobs[currentPrompt.filename] = audioBlob;
+
+                    const playbackContainer = document.getElementById("playbackContainer");
+                    const audioPlayback = document.getElementById("audioPlayback");
+                    audioPlayback.src = URL.createObjectURL(audioBlob);
+                    playbackContainer.classList.remove("hidden");
+
+                    renderSentenceList();
+                    showToast(`Đã lưu file: ${currentPrompt.filename}`, "check");
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                
+                document.getElementById("btnRecord").classList.add("bg-red-700", "recording-pulse");
+                document.getElementById("btnStop").disabled = false;
+                document.getElementById("btnStop").classList.remove("bg-slate-200", "text-slate-400", "cursor-not-allowed");
+                document.getElementById("btnStop").classList.add("bg-slate-800", "text-white", "hover:bg-slate-900");
+                document.getElementById("recordingStatusDot").className = "w-3 h-3 rounded-full bg-red-600 animate-ping";
+
+                recordingStartTime = Date.now();
+                timerInterval = setInterval(updateTimer, 1000);
+
+            } catch (err) {
+                console.error("Microphone error:", err);
+                showToast("Không thể truy cập Microphone. Vui lòng cấp quyền!", "alert-circle");
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                isRecording = false;
+
+                clearInterval(timerInterval);
+                document.getElementById("recordingTimer").innerText = "00:00";
+                document.getElementById("btnRecord").classList.remove("bg-red-700", "recording-pulse");
+                document.getElementById("btnStop").disabled = true;
+                document.getElementById("btnStop").className = "w-12 h-12 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center cursor-not-allowed transition-all";
+                document.getElementById("recordingStatusDot").className = "w-3 h-3 rounded-full bg-slate-300";
+            }
+        }
+
+        function updateTimer() {
+            const elapsedSeconds = Math.floor((Date.now() - recordingStartTime) / 1000);
+            const mins = String(Math.floor(elapsedSeconds / 60)).padStart(2, '0');
+            const secs = String(elapsedSeconds % 60).padStart(2, '0');
+            document.getElementById("recordingTimer").innerText = `${mins}:${secs}`;
+        }
+
+        function deleteCurrentRecord() {
+            const currentPrompt = activePrompts[selectedPromptIndex];
+            if (recordedBlobs[currentPrompt.filename]) {
+                delete recordedBlobs[currentPrompt.filename];
+                document.getElementById("playbackContainer").classList.add("hidden");
+                document.getElementById("audioPlayback").src = "";
+                renderSentenceList();
+                showToast(`Đã xóa file: ${currentPrompt.filename}`, "info");
+            }
+        }
+
+        function exportMetadataJSON() {
+            const metadata = {
+                subject: currentSubject,
+                timestamp: new Date().toISOString(),
+                totalFilesExpected: activePrompts.length,
+                totalFilesRecorded: Object.keys(recordedBlobs).length,
+                records: activePrompts.map(p => ({
+                    code: p.code,
+                    mode: p.mode,
+                    filename: p.filename,
+                    intent: p.intent,
+                    transcript: p.text,
+                    isRecorded: !!recordedBlobs[p.filename]
+                }))
+            };
+
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(metadata, null, 2));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `${currentSubject.id}_metadata.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function exportMetadataCSV() {
+            let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+            csvContent += "MaNguoi,TuoiThuc,GioiTinh,VungGiong,QueQuan,MaCau,CheDo,Intent,Transcript,TenFile,DaThu\n";
+
+            activePrompts.forEach(p => {
+                const isRecorded = !!recordedBlobs[p.filename] ? "Có" : "Chưa";
+                const cleanText = `"${p.text.replace(/"/g, '""')}"`;
+                const row = [
+                    currentSubject.id,
+                    currentSubject.realAge,
+                    currentSubject.gender,
+                    currentSubject.region,
+                    `"${currentSubject.province}"`,
+                    p.code,
+                    p.mode,
+                    p.intent,
+                    cleanText,
+                    p.filename,
+                    isRecorded
+                ].join(",");
+                csvContent += row + "\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `${currentSubject.id}_metadata.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+
+        async function generateZipBlob() {
+            const fileKeys = Object.keys(recordedBlobs);
+            if (fileKeys.length === 0) return null;
+
+            const zip = new JSZip();
+            const folder = zip.folder(currentSubject.id);
+
+            fileKeys.forEach(filename => {
+                folder.file(filename, recordedBlobs[filename]);
+            });
+
+            const metadata = {
+                subject: currentSubject,
+                exportDate: new Date().toISOString(),
+                recordedFilesCount: fileKeys.length,
+                totalPrompts: activePrompts.length
+            };
+            folder.file("metadata.json", JSON.stringify(metadata, null, 2));
+
+            return await zip.generateAsync({ type: "blob" });
+        }
+
+        async function exportAllZIP() {
+            const blob = await generateZipBlob();
+            if (!blob) {
+                showToast("Chưa có file ghi âm nào để xuất!", "alert-circle");
+                return;
+            }
+
+            const zipUrl = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = zipUrl;
+            link.download = `${currentSubject.id}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            
+            showToast(`Tải thành công gói ${currentSubject.id}.zip`, "check");
+        }
+
+        /* ----------------------------------------------------
+           9. GOOGLE DRIVE UPLOAD LOGIC (ĐÃ BỔ SUNG ĐẦY ĐỦ)
+        ---------------------------------------------------- */
+        async function uploadToGoogleDrive() {
+            const fileKeys = Object.keys(recordedBlobs);
+            if (fileKeys.length === 0) {
+                showToast("Chưa có file ghi âm nào để gửi!", "alert-circle");
+                return;
+            }
+
+            const uploadBtn = document.getElementById("btnUploadDrive");
+            const originalBtnHtml = uploadBtn.innerHTML;
+
+            try {
+                uploadBtn.disabled = true;
+                uploadBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Đang nén & gửi lên Drive...`;
+                lucide.createIcons();
+                showToast("Đang nén dữ liệu ZIP để đẩy lên Google Drive...", "loader");
+
+                const zipBlob = await generateZipBlob();
+                const fileName = `${currentSubject.id}.zip`;
+
+                const reader = new FileReader();
+                reader.readAsDataURL(zipBlob);
+                
+                reader.onloadend = async function() {
+                    const base64Data = reader.result.split(',')[1];
+                    
+                    const payload = {
+                        filename: fileName,
+                        mimeType: "application/zip",
+                        fileData: base64Data
+                    };
+
+                    const response = await fetch(GOOGLE_SCRIPT_URL, {
+                        method: "POST",
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+
+                    if (result.status === "success") {
+                        showToast(`Dữ liệu ${fileName} đã gửi thành công lên Google Drive!`, "check");
+                    } else {
+                        showToast(`Lỗi Drive API: ${result.message}`, "alert-circle");
+                    }
+
+                    uploadBtn.disabled = false;
+                    uploadBtn.innerHTML = originalBtnHtml;
+                    lucide.createIcons();
+                };
+
+            } catch (error) {
+                console.error("Upload error:", error);
+                showToast("Gửi file thất bại! Kiểm tra kết nối mạng hoặc CORS.", "alert-circle");
+                uploadBtn.disabled = false;
+                uploadBtn.innerHTML = originalBtnHtml;
+                lucide.createIcons();
+            }
+        }
+
+        /* ----------------------------------------------------
+           10. TOAST NOTIFICATION HELPERS
+        ---------------------------------------------------- */
+        function showToast(msg, iconType = "info") {
+            const toast = document.getElementById("toast");
+            const toastMsg = document.getElementById("toastMessage");
+            const toastIcon = document.getElementById("toastIcon");
+
+            toastMsg.innerText = msg;
+            toastIcon.innerHTML = `<i data-lucide="${iconType}" class="w-4 h-4"></i>`;
+            lucide.createIcons();
+
+            toast.classList.remove("translate-y-20", "opacity-0");
+            toast.classList.add("translate-y-0", "opacity-100");
+
+            setTimeout(() => {
+                toast.classList.remove("translate-y-0", "opacity-100");
+                toast.classList.add("translate-y-20", "opacity-0");
+            }, 3500);
+        }
+    </script>
+</body>
+</html>
