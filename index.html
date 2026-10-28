@@ -839,6 +839,25 @@
             showToast(`Tải thành công gói ${currentSubject.id}.zip`, "check");
         }
 
+        // Hàm tạo file ZIP có giới hạn thời gian (Timeout 30 giây để chống treo/vô hạn nén)
+        async function generateZipBlobWithTimeout(timeoutMs = 30000) {
+            return new Promise(async (resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Quá thời gian nén (Timeout)! Tiến trình đã bị hủy để tránh treo trình duyệt."));
+                }, timeoutMs);
+
+                try {
+                    const blob = await generateZipBlob();
+                    clearTimeout(timer);
+                    resolve(blob);
+                } catch (err) {
+                    clearTimeout(timer);
+                    reject(err);
+                }
+            });
+        }
+
+        // Cập nhật hàm gửi Drive có kiểm soát an toàn
         async function uploadToGoogleDrive() {
             const fileKeys = Object.keys(recordedBlobs);
             if (fileKeys.length === 0) {
@@ -851,13 +870,17 @@
 
             try {
                 uploadBtn.disabled = true;
-                uploadBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Đang nén & gửi lên Drive...`;
+                uploadBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Đang nén...`;
                 lucide.createIcons();
-                showToast("Đang nén dữ liệu ZIP để đẩy lên Google Drive...", "loader");
+                showToast("Đang nén dữ liệu (Tối đa 30s)...", "loader");
 
-                const zipBlob = await generateZipBlob();
+                // Gọi hàm nén có bảo vệ chống vô hạn
+                const zipBlob = await generateZipBlobWithTimeout(30000);
+                
+                uploadBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Đang gửi Drive...`;
+                lucide.createIcons();
+
                 const fileName = `${currentSubject.id}.zip`;
-
                 const reader = new FileReader();
                 reader.readAsDataURL(zipBlob);
                 
@@ -890,7 +913,7 @@
 
             } catch (error) {
                 console.error("Upload error:", error);
-                showToast("Gửi file thất bại! Kiểm tra kết nối mạng hoặc CORS.", "alert-circle");
+                showToast(error.message || "Gửi file thất bại!", "alert-circle");
                 uploadBtn.disabled = false;
                 uploadBtn.innerHTML = originalBtnHtml;
                 lucide.createIcons();
